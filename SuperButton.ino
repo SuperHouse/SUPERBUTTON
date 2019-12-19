@@ -34,6 +34,7 @@ Adafruit_SSD1306 display(OLED_RESET);
 // For rotary encoder:
 #include <Encoder.h>  // "Encoder" library by PJRC
 long old_encoder_position = -999;
+long last_activity_time   = 0;
 
 // For non-volatile memory:
 #include <EEPROM.h>
@@ -149,6 +150,11 @@ void loop() {
     Serial.println("HX711 not found.");
   }
 
+  if(millis() - last_activity_time > ADJUSTMENT_MODE_TIMEOUT)
+  {
+    adjust_mode = false;
+  }
+
   // Ignore the rotary encoder unless we're in adjustment mode
   if(adjust_mode == true)
   {
@@ -156,6 +162,7 @@ void loop() {
     if( new_encoder_position > old_encoder_position)
     {
       trigger_level++;
+      last_activity_time = millis();
       // Prevent the trigger level going above 100%
       if(trigger_level > 100)
       {
@@ -166,6 +173,7 @@ void loop() {
     if( new_encoder_position < old_encoder_position)
     {
       trigger_level--;
+      last_activity_time = millis();
       // Prevent the trigger level going below 1%
       if(trigger_level < 1)
       {
@@ -215,6 +223,7 @@ void check_button()
   if(button_state == LOW && button_pressed == false)
   {
     // The button has transitioned from off to on
+    last_activity_time = millis();
     button_pressed = true;
     if(adjust_mode == true)
     {
