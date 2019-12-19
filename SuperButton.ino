@@ -9,9 +9,9 @@
      www.superhouse.tv/sb
 
    To do:
-    - Set zero point on startup.
     - Require button press for 1 second to enter adjustment mode.
     - Debounce button.
+    - Reduce screen update rate to improve legibility.
 
    By:
     Chris Fryer <chris.fryer78@gmail.com>
@@ -23,7 +23,7 @@
 
 // For load cell amplifier:
 #include "HX711.h"
-int16_t zero_pressure_offset = 5;
+int16_t zero_pressure_offset = 0;
 
 // For OLED:
 #include <Wire.h>
@@ -68,7 +68,9 @@ HX711 scale;
 // Create rotary encoder object
 Encoder encoder(ENCODER_PIN_A, ENCODER_PIN_B);
 
-void check_current_pressure();
+void check_if_threshold_reached();
+void read_pressure_level();
+int  get_scaled_load_sensor_value();
 void check_ui_timeout();
 void read_rotary_encoder();
 void update_display();
@@ -80,9 +82,9 @@ void check_button();
 */
 void setup() {
   Serial.begin(9600);
-  //while (!Serial) {
-  //  ; // wait for serial port to connect. Needed for native USB port only
-  //}
+  while (!Serial) {
+    ; // wait for serial port to connect. Needed for native USB port only
+  }
   Serial.println("Starting");
 
   pinMode(ENCODER_SWITCH, INPUT_PULLUP);
@@ -111,9 +113,18 @@ void setup() {
   display.display();
 
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+  delay(100); // Load cell requires ~15ms to settle. Allow longer for safety.
+  
+  // Read the load cell to set the zero offset. This is like
+  // an automatic "tare" operation at startup
+  zero_pressure_offset = -1 * get_scaled_load_cell_value();
+  Serial.print("Tare offset: ");
+  Serial.println(zero_pressure_offset, DEC);
 
-  // We only reach the next line if scale.begin() succeeded. If it didn't,
-  // the controller stalls with "Button not connected" on the display.
+  // This vvvvvvvvvvvvvv doesn't seem to work. Always gets to this point!
+  //
+  // We only reach the next line if scale.begin() succeeded above. If it
+  // didn't, the controller stalls with "Button not connected" on the display.
   // If it succeeded, that message is very quickly wiped below.
   display.clearDisplay();
   display.setCursor(0, 0);
@@ -126,8 +137,9 @@ void setup() {
    Loop
 */
 void loop() {
-  read_load_cell();
-  check_current_pressure();
+  //read_load_cell();
+  read_pressure_level();
+  check_if_threshold_reached();
   check_ui_timeout();
   read_rotary_encoder();
   update_display();
@@ -135,14 +147,14 @@ void loop() {
 }
 
 
-/*
+/**
    See if the current reading from the load cell exceeds the trigger level
 */
-void check_current_pressure()
+void check_if_threshold_reached()
 {
   if (pressure_level > trigger_level)
   {
-    Serial.println("              ON");
+    //Serial.println("              ON");
     digitalWrite(LED_PIN, HIGH);
     if (ENABLE_HAPTIC_FEEDBACK)
     {
@@ -150,7 +162,7 @@ void check_current_pressure()
     }
     digitalWrite(OUTPUT_PIN, HIGH);
   } else {
-    Serial.println();
+    //Serial.println();
     digitalWrite(LED_PIN, LOW);
     if (ENABLE_HAPTIC_FEEDBACK)
     {
@@ -242,18 +254,24 @@ void update_display()
 /**
    Read the current pressure level
 */
-void read_load_cell()
+void read_pressure_level()
 {
+  pressure_level = get_scaled_load_cell_value() + zero_pressure_offset;
+}
+
+/*
+ * Read the load cell and scale the value to a percentage
+ */
+int get_scaled_load_cell_value()
+{
+  int pressure;
   if (scale.is_ready()) {
     long pressure_reading = scale.read() * -1;
-    pressure_level    = map(pressure_reading, 0, 1000000, 0, 100) + zero_pressure_offset;
-    Serial.print("Pressure: ");
-    Serial.print(pressure_level);
-    Serial.print("    Trigger: ");
-    Serial.print(trigger_level);
+    pressure = map(pressure_reading, 0, 1000000, 0, 100);
   } else {
-    Serial.println("HX711 not found.");
+    //Serial.println("HX711 not found.");
   }
+  return pressure;
 }
 
 /**
