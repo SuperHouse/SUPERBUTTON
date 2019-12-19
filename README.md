@@ -20,8 +20,8 @@ To do:
  * Require button press for 1 second to enter adjustment mode.
  * Debounce button.
 
-By:  
- Chris Fryer <chris.fryer78@gmail.com>  
- Jonathan Oxer <jon@oxer.com.au>
+Contributers:
+ * Chris Fryer <chris.fryer78@gmail.com>
+ * Jonathan Oxer <jon@oxer.com.au>
 
 Copyright 2019 SuperHouse Automation Pty Ltd www.superhouse.tv
