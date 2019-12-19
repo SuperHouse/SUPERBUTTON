@@ -1,3 +1,4 @@
 #define ENABLE_HAPTIC_FEEDBACK false
 #define DEFAULT_TRIGGER_LEVEL  50
 #define ADJUSTMENT_MODE_TIMEOUT 2000
+#define SCREEN_UPDATE_INTERVAL  200  // 200ms = 5 updates per second

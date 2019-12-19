@@ -11,7 +11,6 @@
    To do:
     - Require button press for 1 second to enter adjustment mode.
     - Debounce button.
-    - Reduce screen update rate to improve legibility.
 
    By:
     Chris Fryer <chris.fryer78@gmail.com>
@@ -31,6 +30,7 @@ int16_t zero_pressure_offset = 0;
 #include <Adafruit_SSD1306.h>
 #define OLED_RESET 7
 Adafruit_SSD1306 display(OLED_RESET);
+long last_screen_update = 0;
 
 // For rotary encoder:
 #include <Encoder.h>  // "Encoder" library by PJRC
@@ -114,7 +114,7 @@ void setup() {
 
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
   delay(100); // Load cell requires ~15ms to settle. Allow longer for safety.
-  
+
   // Read the load cell to set the zero offset. This is like
   // an automatic "tare" operation at startup
   zero_pressure_offset = -1 * get_scaled_load_cell_value();
@@ -227,28 +227,32 @@ void read_rotary_encoder()
 */
 void update_display()
 {
-  // Display the current pressure level
-  display.clearDisplay();
-  display.setTextSize(4);
-  display.setTextColor(WHITE);
-  display.setCursor(0, 2);
-  display.println(pressure_level);
-
-  // Dividing line between numbers
-  display.drawLine(67, 0, 67, 31, WHITE);
-
-  // Display the trigger level
-  display.setTextSize(3);
-  if (adjust_mode == true)
+  if (millis() - last_screen_update > SCREEN_UPDATE_INTERVAL)
   {
-    display.setTextColor(BLACK, WHITE);
-    display.fillRect(67, 0, 127, 32, WHITE);
-  } else {
+    last_screen_update = millis();
+    // Display the current pressure level
+    display.clearDisplay();
+    display.setTextSize(4);
     display.setTextColor(WHITE);
+    display.setCursor(0, 2);
+    display.println(pressure_level);
+
+    // Dividing line between numbers
+    display.drawLine(67, 0, 67, 31, WHITE);
+
+    // Display the trigger level
+    display.setTextSize(3);
+    if (adjust_mode == true)
+    {
+      display.setTextColor(BLACK, WHITE);
+      display.fillRect(67, 0, 127, 32, WHITE);
+    } else {
+      display.setTextColor(WHITE);
+    }
+    display.setCursor(73, 5);
+    display.println(trigger_level);
+    display.display();
   }
-  display.setCursor(73, 5);
-  display.println(trigger_level);
-  display.display();
 }
 
 /**
@@ -260,8 +264,8 @@ void read_pressure_level()
 }
 
 /*
- * Read the load cell and scale the value to a percentage
- */
+   Read the load cell and scale the value to a percentage
+*/
 int get_scaled_load_cell_value()
 {
   int pressure;
