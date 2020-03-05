@@ -228,7 +228,7 @@ void readRotaryEncoder()
 }
 
 /**
-   Draw current values on the OLED
+  Draw current values on the OLED
 */
 void updateOledDisplay()
 {
@@ -282,7 +282,7 @@ void updateOledDisplay()
 }
 
 /**
-   Read the current pressure level
+  Read the current pressure level
 */
 void readPressureLevel()
 {
@@ -293,8 +293,8 @@ void readPressureLevel()
   }
 }
 
-/*
-   Read the load cell and scale the value to a percentage
+/**
+  Read the load cell and scale the value to a percentage
 */
 int32_t getScaledLoadCellValue()
 {
@@ -310,7 +310,7 @@ int32_t getScaledLoadCellValue()
 }
 
 /**
-   See if the rotary encoder button has been pressed
+  See if the rotary encoder button has been pressed
 */
 void checkButton()
 {

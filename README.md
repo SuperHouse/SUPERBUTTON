@@ -24,4 +24,4 @@ Contributers:
  * Chris Fryer <chris.fryer78@gmail.com>
  * Jonathan Oxer <jon@oxer.com.au>
 
-Copyright 2019 SuperHouse Automation Pty Ltd www.superhouse.tv
+Copyright 2019-2020 SuperHouse Automation Pty Ltd www.superhouse.tv
