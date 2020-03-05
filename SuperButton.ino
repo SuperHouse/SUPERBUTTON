@@ -34,8 +34,8 @@ long last_screen_update = 0;
 
 // For rotary encoder:
 #include <Encoder.h>  // "Encoder" library by PJRC
-long old_encoder_position = -999;
-long last_activity_time   = 0;
+uint16_t old_encoder_position = -999;
+uint16_t last_activity_time   = 0;
 
 // For non-volatile memory:
 #include <EEPROM.h>
@@ -134,7 +134,7 @@ void setup() {
 
 
 /**
-   Loop
+  Loop
 */
 void loop() {
   //read_load_cell();
@@ -148,7 +148,7 @@ void loop() {
 
 
 /**
-   See if the current reading from the load cell exceeds the trigger level
+  See if the current reading from the load cell exceeds the trigger level
 */
 void check_if_threshold_reached()
 {
@@ -161,6 +161,7 @@ void check_if_threshold_reached()
       digitalWrite(HAPTIC_PIN, HIGH);
     }
     digitalWrite(OUTPUT_PIN, HIGH);
+    last_activity_time = millis();
   } else {
     //Serial.println();
     digitalWrite(LED_PIN, LOW);
@@ -173,25 +174,26 @@ void check_if_threshold_reached()
 }
 
 /**
-   See if the UI has timed out
+  See if the UI has timed out
 */
 void check_ui_timeout()
 {
-  if (millis() - last_activity_time > ADJUSTMENT_MODE_TIMEOUT)
+  if (millis() - last_activity_time > (ADJUSTMENT_MODE_TIMEOUT * 1000))
   {
     adjust_mode = false;
   }
 }
 
 /**
-   Check activity on the rotary encoder
+  Check activity on the rotary encoder
 */
 void read_rotary_encoder()
 {
+  long new_encoder_position = 0;
   // Ignore the rotary encoder unless we're in adjustment mode
   if (adjust_mode == true)
   {
-    long new_encoder_position = encoder.read();
+    new_encoder_position = encoder.read();
     if ( new_encoder_position > old_encoder_position)
     {
       trigger_level++;
@@ -217,8 +219,14 @@ void read_rotary_encoder()
   } else {
     // Even if we don't want to read the encoder, consume the value
     // from it so that a queued change doesn't get applied the moment
-    // we enter adjustment mode
-    old_encoder_position = encoder.read();
+    // we enter adjustment mode. We also use this to un-blank the
+    // display if the knob is twiddled.
+    new_encoder_position = encoder.read();
+    if (new_encoder_position != old_encoder_position)
+    {
+      old_encoder_position = new_encoder_position;
+      last_activity_time = millis();
+    }
   }
 }
 
@@ -227,31 +235,44 @@ void read_rotary_encoder()
 */
 void update_display()
 {
-  if (millis() - last_screen_update > SCREEN_UPDATE_INTERVAL)
+  uint16_t time_now = millis();
+
+  if (time_now - last_screen_update > SCREEN_UPDATE_INTERVAL)
   {
-    last_screen_update = millis();
-    // Display the current pressure level
-    display.clearDisplay();
-    display.setTextSize(4);
-    display.setTextColor(WHITE);
-    display.setCursor(0, 2);
-    display.println(pressure_level);
-
-    // Dividing line between numbers
-    display.drawLine(67, 0, 67, 31, WHITE);
-
-    // Display the trigger level
-    display.setTextSize(3);
-    if (adjust_mode == true)
+    last_screen_update = time_now;
+    
+    if (time_now - last_activity_time < (SCREEN_TIMEOUT_INTERVAL * 1000))
     {
-      display.setTextColor(BLACK, WHITE);
-      display.fillRect(67, 0, 127, 32, WHITE);
-    } else {
+      // The screen hasn't timed out yet, so display stuff
+      // Display the current pressure level
+      display.clearDisplay();
+      display.setTextSize(4);
       display.setTextColor(WHITE);
+      display.setCursor(0, 2);
+      display.println(pressure_level);
+
+      // Dividing line between numbers
+      display.drawLine(67, 0, 67, 31, WHITE);
+
+      // Display the trigger level
+      display.setTextSize(3);
+      if (adjust_mode == true)
+      {
+        display.setTextColor(BLACK, WHITE);
+        display.fillRect(67, 0, 127, 32, WHITE);
+      } else {
+        display.setTextColor(WHITE);
+      }
+      display.setCursor(73, 5);
+      display.println(trigger_level);
+      display.display();
+      Serial.println("Show");
+    } else {
+      // The screen has timed out, so blank it
+      display.clearDisplay();
+      display.display();
+      Serial.println("Blank");
     }
-    display.setCursor(73, 5);
-    display.println(trigger_level);
-    display.display();
   }
 }
 
@@ -261,6 +282,7 @@ void update_display()
 void read_pressure_level()
 {
   pressure_level = get_scaled_load_cell_value() + zero_pressure_offset;
+  Serial.println(pressure_level);
 }
 
 /*
@@ -302,6 +324,7 @@ void check_button()
   if (button_state == HIGH && button_pressed == true)
   {
     // The button has transitioned from on to off
+    last_activity_time = millis();
     button_pressed = false;
   }
 }
