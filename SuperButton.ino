@@ -16,72 +16,65 @@
     Chris Fryer <chris.fryer78@gmail.com>
     Jonathan Oxer <jon@oxer.com.au>
 
-   Copyright 2019 SuperHouse Automation Pty Ltd www.superhouse.tv
+   Copyright 2019-2020 SuperHouse Automation Pty Ltd www.superhouse.tv
  *************************************************************/
+/*--------------------------- Configuration ------------------------------*/
+// Configuration should be done in the included file:
 #include "config.h"
 
+/*--------------------------- Libraries ----------------------------------*/
 // For load cell amplifier:
 #include "HX711.h"
-int16_t zero_pressure_offset = 0;
-
-// For OLED:
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#define OLED_RESET 7
-Adafruit_SSD1306 display(OLED_RESET);
-long last_screen_update = 0;
-
-// For rotary encoder:
-#include <Encoder.h>  // "Encoder" library by PJRC
-uint16_t old_encoder_position = -999;
-uint16_t last_activity_time   = 0;
-
-// For non-volatile memory:
+#include <Encoder.h>              // "Encoder" library by PJRC
 #include <EEPROM.h>
-int eeprom_address = 0;
+/*--------------------------- Global Variables ---------------------------*/
+// OLED:
+uint32_t g_last_screen_update   = 0;
+
+// Rotary encoder:
+int32_t  g_old_encoder_position = -999;
+uint32_t g_last_activity_time   = 0;
+
+// Non-volatile memory:
+int g_eeprom_address = 0;
 
 /* 227 (Pocophone) = 920000 */
+// Load cell:
+int32_t g_trigger_level         = DEFAULT_TRIGGER_LEVEL;
+int32_t g_pressure_level        =  0;
+uint8_t g_adjust_mode           = false;
+uint8_t g_button_pressed        = false;
+int32_t g_zero_pressure_offset  = 0;
 
-// Load cell connections
-const int LOADCELL_DOUT_PIN = 5;
-const int LOADCELL_SCK_PIN  = 4;
-const int TRIGGER_LEVEL_PIN = A0;
-int trigger_level   = DEFAULT_TRIGGER_LEVEL;
-int pressure_level  =  0;
-bool adjust_mode    = false;
-bool button_pressed = false;
+/*--------------------------- Function Signatures ---------------------------*/
+void checkIfThresholdReached();
+void readPressureLevel();
+int  getScaledLoadSensorValue();
+void checkUiTimeout();
+void readRotaryEncoder();
+void updateOledDisplay();
+void readLoadCell();
+void checkButton();
 
-// Rotary encoder connections
-#define ENCODER_PIN_A    1
-#define ENCODER_PIN_B    0
-#define ENCODER_SWITCH  A0
-
-// Output connections
-#define LED_PIN         13
-#define HAPTIC_PIN      12
-#define OUTPUT_PIN       6
-
-// Create load cell object
+/*--------------------------- Instantiate Global Objects --------------------*/
+// Load cell
 HX711 scale;
 
-// Create rotary encoder object
+// Rotary encoder
 Encoder encoder(ENCODER_PIN_A, ENCODER_PIN_B);
 
-void check_if_threshold_reached();
-void read_pressure_level();
-int  get_scaled_load_sensor_value();
-void check_ui_timeout();
-void read_rotary_encoder();
-void update_display();
-void read_load_cell();
-void check_button();
+// OLED display
+Adafruit_SSD1306 display(128, 32, &Wire, -1);
 
+/*--------------------------- Program ---------------------------------------*/
 /**
-   Setup
+  Setup
 */
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   //while (!Serial) {
   //  ; // wait for serial port to connect. Needed for native USB port only
   //}
@@ -96,10 +89,10 @@ void setup() {
   pinMode(OUTPUT_PIN, OUTPUT);
 
   // Load the trigger level from EEPROM if possible, or fall back to default
-  EEPROM.get(eeprom_address, trigger_level);
-  if (trigger_level < 1 || trigger_level > 100)
+  EEPROM.get(g_eeprom_address, g_trigger_level);
+  if (g_trigger_level < 1 || g_trigger_level > 100)
   {
-    trigger_level = DEFAULT_TRIGGER_LEVEL;
+    g_trigger_level = DEFAULT_TRIGGER_LEVEL;
   }
 
   // Initialize with the I2C addr 0x3C (for the 128x32)
@@ -117,9 +110,9 @@ void setup() {
 
   // Read the load cell to set the zero offset. This is like
   // an automatic "tare" operation at startup
-  zero_pressure_offset = -1 * get_scaled_load_cell_value();
+  g_zero_pressure_offset = -1 * getScaledLoadCellValue();
   Serial.print("Tare offset: ");
-  Serial.println(zero_pressure_offset, DEC);
+  Serial.println(g_zero_pressure_offset, DEC);
 
   // This vvvvvvvvvvvvvv doesn't seem to work. Always gets to this point!
   //
@@ -132,38 +125,42 @@ void setup() {
   display.display();
 }
 
-
 /**
   Loop
 */
-void loop() {
-  //read_load_cell();
-  read_pressure_level();
-  check_if_threshold_reached();
-  check_ui_timeout();
-  read_rotary_encoder();
-  update_display();
-  check_button();
+void loop()
+{
+  readPressureLevel();
+  checkIfThresholdReached();
+  checkUiTimeout();
+  readRotaryEncoder();
+  updateOledDisplay();
+  checkButton();
 }
-
 
 /**
   See if the current reading from the load cell exceeds the trigger level
 */
-void check_if_threshold_reached()
+void checkIfThresholdReached()
 {
-  if (pressure_level > trigger_level)
+  if (g_pressure_level > g_trigger_level)
   {
-    //Serial.println("              ON");
+    if (ENABLE_SERIAL_DEBUGGING)
+    {
+      Serial.println("              ON");
+    }
     digitalWrite(LED_PIN, HIGH);
     if (ENABLE_HAPTIC_FEEDBACK)
     {
       digitalWrite(HAPTIC_PIN, HIGH);
     }
     digitalWrite(OUTPUT_PIN, HIGH);
-    last_activity_time = millis();
+    g_last_activity_time = millis();
   } else {
-    //Serial.println();
+    if (ENABLE_SERIAL_DEBUGGING)
+    {
+      Serial.println();
+    }
     digitalWrite(LED_PIN, LOW);
     if (ENABLE_HAPTIC_FEEDBACK)
     {
@@ -176,45 +173,45 @@ void check_if_threshold_reached()
 /**
   See if the UI has timed out
 */
-void check_ui_timeout()
+void checkUiTimeout()
 {
-  if (millis() - last_activity_time > (ADJUSTMENT_MODE_TIMEOUT * 1000))
+  if (millis() - g_last_activity_time > (ADJUSTMENT_MODE_TIMEOUT * 1000))
   {
-    adjust_mode = false;
+    g_adjust_mode = false;
   }
 }
 
 /**
   Check activity on the rotary encoder
 */
-void read_rotary_encoder()
+void readRotaryEncoder()
 {
-  long new_encoder_position = 0;
+  int32_t new_encoder_position = 0;
   // Ignore the rotary encoder unless we're in adjustment mode
-  if (adjust_mode == true)
+  if (true == g_adjust_mode)
   {
     new_encoder_position = encoder.read();
-    if ( new_encoder_position > old_encoder_position)
+    if ( new_encoder_position > g_old_encoder_position)
     {
-      trigger_level++;
-      last_activity_time = millis();
+      g_trigger_level++;
+      g_last_activity_time = millis();
       // Prevent the trigger level going above 100%
-      if (trigger_level > 100)
+      if (g_trigger_level > 100)
       {
-        trigger_level = 100;
+        g_trigger_level = 100;
       }
-      old_encoder_position = new_encoder_position;
+      g_old_encoder_position = new_encoder_position;
     }
-    if ( new_encoder_position < old_encoder_position)
+    if ( new_encoder_position < g_old_encoder_position)
     {
-      trigger_level--;
-      last_activity_time = millis();
+      g_trigger_level--;
+      g_last_activity_time = millis();
       // Prevent the trigger level going below 1%
-      if (trigger_level < 1)
+      if (g_trigger_level < 1)
       {
-        trigger_level = 1;
+        g_trigger_level = 1;
       }
-      old_encoder_position = new_encoder_position;
+      g_old_encoder_position = new_encoder_position;
     }
   } else {
     // Even if we don't want to read the encoder, consume the value
@@ -222,10 +219,10 @@ void read_rotary_encoder()
     // we enter adjustment mode. We also use this to un-blank the
     // display if the knob is twiddled.
     new_encoder_position = encoder.read();
-    if (new_encoder_position != old_encoder_position)
+    if (new_encoder_position != g_old_encoder_position)
     {
-      old_encoder_position = new_encoder_position;
-      last_activity_time = millis();
+      g_old_encoder_position = new_encoder_position;
+      g_last_activity_time = millis();
     }
   }
 }
@@ -233,30 +230,32 @@ void read_rotary_encoder()
 /**
    Draw current values on the OLED
 */
-void update_display()
+void updateOledDisplay()
 {
-  uint16_t time_now = millis();
+  uint32_t time_now = millis();
 
-  if (time_now - last_screen_update > SCREEN_UPDATE_INTERVAL)
+  if (time_now - g_last_screen_update > SCREEN_UPDATE_INTERVAL)
   {
-    last_screen_update = time_now;
-    
-    if (time_now - last_activity_time < (SCREEN_TIMEOUT_INTERVAL * 1000))
+    g_last_screen_update = time_now;
+
+    if (time_now - g_last_activity_time < (SCREEN_TIMEOUT_INTERVAL * 1000))
     {
       // The screen hasn't timed out yet, so display stuff
       // Display the current pressure level
       display.clearDisplay();
       display.setTextSize(4);
-      display.setTextColor(WHITE);
+      //display.setTextFont(6);
+      display.cp437(true);
+      display.setTextColor(WHITE, BLACK);
       display.setCursor(0, 2);
-      display.println(pressure_level);
+      display.println(g_pressure_level);
 
       // Dividing line between numbers
       display.drawLine(67, 0, 67, 31, WHITE);
 
       // Display the trigger level
       display.setTextSize(3);
-      if (adjust_mode == true)
+      if (true == g_adjust_mode)
       {
         display.setTextColor(BLACK, WHITE);
         display.fillRect(67, 0, 127, 32, WHITE);
@@ -264,14 +263,20 @@ void update_display()
         display.setTextColor(WHITE);
       }
       display.setCursor(73, 5);
-      display.println(trigger_level);
+      display.println(g_trigger_level);
       display.display();
-      Serial.println("Show");
+      if (ENABLE_SERIAL_DEBUGGING)
+      {
+        Serial.println("Show");
+      }
     } else {
       // The screen has timed out, so blank it
       display.clearDisplay();
       display.display();
-      Serial.println("Blank");
+      if (ENABLE_SERIAL_DEBUGGING)
+      {
+        Serial.println("Blank");
+      }
     }
   }
 }
@@ -279,20 +284,24 @@ void update_display()
 /**
    Read the current pressure level
 */
-void read_pressure_level()
+void readPressureLevel()
 {
-  pressure_level = get_scaled_load_cell_value() + zero_pressure_offset;
-  Serial.println(pressure_level);
+  g_pressure_level = getScaledLoadCellValue() + g_zero_pressure_offset;
+  if (ENABLE_SERIAL_DEBUGGING)
+  {
+    Serial.println(g_pressure_level);
+  }
 }
 
 /*
    Read the load cell and scale the value to a percentage
 */
-int get_scaled_load_cell_value()
+int32_t getScaledLoadCellValue()
 {
-  int pressure;
-  if (scale.is_ready()) {
-    long pressure_reading = scale.read() * -1;
+  int32_t pressure;
+  if (scale.is_ready())
+  {
+    int32_t pressure_reading = scale.read() * -1;
     pressure = map(pressure_reading, 0, 1000000, 0, 100);
   } else {
     //Serial.println("HX711 not found.");
@@ -303,28 +312,34 @@ int get_scaled_load_cell_value()
 /**
    See if the rotary encoder button has been pressed
 */
-void check_button()
+void checkButton()
 {
-  byte button_state = digitalRead(ENCODER_SWITCH);
-  if (button_state == LOW && button_pressed == false)
+  uint8_t button_state = digitalRead(ENCODER_SWITCH);
+  if (LOW == button_state && false == g_button_pressed)
   {
     // The button has transitioned from off to on
-    last_activity_time = millis();
-    button_pressed = true;
-    if (adjust_mode == true)
+    g_last_activity_time = millis();
+    g_button_pressed = true;
+    if (true == g_adjust_mode)
     {
-      adjust_mode = false;
-      Serial.println("Lock");
-      EEPROM.put(eeprom_address, trigger_level);
+      g_adjust_mode = false;
+      if (ENABLE_SERIAL_DEBUGGING)
+      {
+        Serial.println("Lock");
+      }
+      EEPROM.put(g_eeprom_address, g_trigger_level);
     } else {
-      adjust_mode = true;
-      Serial.println("Adjust");
+      g_adjust_mode = true;
+      if (ENABLE_SERIAL_DEBUGGING)
+      {
+        Serial.println("Adjust");
+      }
     }
   }
-  if (button_state == HIGH && button_pressed == true)
+  if (HIGH == button_state && true == g_button_pressed)
   {
     // The button has transitioned from on to off
-    last_activity_time = millis();
-    button_pressed = false;
+    g_last_activity_time = millis();
+    g_button_pressed = false;
   }
 }
