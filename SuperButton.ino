@@ -37,17 +37,19 @@ uint32_t g_last_screen_update   = 0;
 // Rotary encoder:
 int32_t  g_old_encoder_position = -999;
 uint32_t g_last_activity_time   = 0;
+uint8_t  g_last_button_state    = 0;
+uint32_t g_last_debounce_time   = 0;
 
 // Non-volatile memory:
 int g_eeprom_address = 0;
 
 /* 227 (Pocophone) = 920000 */
 // Load cell:
-int32_t g_trigger_level         = DEFAULT_TRIGGER_LEVEL;
-int32_t g_pressure_level        =  0;
-uint8_t g_adjust_mode           = false;
-uint8_t g_button_pressed        = false;
-int32_t g_zero_pressure_offset  = 0;
+int32_t g_trigger_level          = DEFAULT_TRIGGER_LEVEL;
+int32_t g_pressure_level         =  0;
+uint8_t g_adjust_mode            = false;
+uint8_t g_button_pressed         = false;
+int32_t g_zero_pressure_offset   = 0;
 
 /*--------------------------- Function Signatures ---------------------------*/
 void checkIfThresholdReached();
@@ -102,8 +104,11 @@ void setup() {
   display.setTextSize(2);
   display.setTextColor(WHITE);
   display.setCursor(0, 0);
-  display.println("Button not connected");
+  display.println(" Checking");
+  display.println("  button");
   display.display();
+
+  delay(500);
 
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
   delay(100); // Load cell requires ~15ms to settle. Allow longer for safety.
@@ -190,8 +195,8 @@ void readRotaryEncoder()
   // Ignore the rotary encoder unless we're in adjustment mode
   if (true == g_adjust_mode)
   {
-    new_encoder_position = encoder.read();
-    if ( new_encoder_position > g_old_encoder_position)
+    new_encoder_position = (int)encoder.read() / 4; // Divide by 4 so we only get 1 step per detent
+    if (new_encoder_position > g_old_encoder_position)
     {
       g_trigger_level++;
       g_last_activity_time = millis();
@@ -200,9 +205,12 @@ void readRotaryEncoder()
       {
         g_trigger_level = 100;
       }
+      Serial.print("Trigger level: ");
+      Serial.print(g_trigger_level);
+      Serial.println("%");
       g_old_encoder_position = new_encoder_position;
     }
-    if ( new_encoder_position < g_old_encoder_position)
+    if (new_encoder_position < g_old_encoder_position)
     {
       g_trigger_level--;
       g_last_activity_time = millis();
@@ -211,6 +219,9 @@ void readRotaryEncoder()
       {
         g_trigger_level = 1;
       }
+      Serial.print("Trigger level: ");
+      Serial.print(g_trigger_level);
+      Serial.println("%");
       g_old_encoder_position = new_encoder_position;
     }
   } else {
@@ -218,11 +229,12 @@ void readRotaryEncoder()
     // from it so that a queued change doesn't get applied the moment
     // we enter adjustment mode. We also use this to un-blank the
     // display if the knob is twiddled.
-    new_encoder_position = encoder.read();
+    new_encoder_position = (int)encoder.read() / 4; // Divide by 4 so we only get 1 step per detent
     if (new_encoder_position != g_old_encoder_position)
     {
       g_old_encoder_position = new_encoder_position;
       g_last_activity_time = millis();
+      //Serial.println(new_encoder_position);
     }
   }
 }
@@ -315,31 +327,32 @@ int32_t getScaledLoadCellValue()
 void checkButton()
 {
   uint8_t button_state = digitalRead(ENCODER_SWITCH);
-  if (LOW == button_state && false == g_button_pressed)
+
+  // Check if button is now pressed and it was previously unpressed
+  if (button_state == LOW && g_last_button_state == HIGH)
   {
-    // The button has transitioned from off to on
-    g_last_activity_time = millis();
-    g_button_pressed = true;
+    g_last_activity_time   = millis();  // Used to un-blank display
+    //Serial.println("Changed");
+
+    // We haven't waited long enough so ignore this press
+    if (millis() - g_last_debounce_time <= DEBOUNCE_PERIOD) {
+      return;
+    }
+    Serial.print("Button pressed.");
+
     if (true == g_adjust_mode)
     {
       g_adjust_mode = false;
-      if (ENABLE_SERIAL_DEBUGGING)
-      {
-        Serial.println("Lock");
-      }
+      Serial.println(" Locking screen.");
       EEPROM.put(g_eeprom_address, g_trigger_level);
+      Serial.print("Saving trigger level: ");
+      Serial.print(g_trigger_level);
+      Serial.println("%");
     } else {
       g_adjust_mode = true;
-      if (ENABLE_SERIAL_DEBUGGING)
-      {
-        Serial.println("Adjust");
-      }
+      Serial.println(" Unlocking screen.");
     }
+    g_last_debounce_time = millis();
   }
-  if (HIGH == button_state && true == g_button_pressed)
-  {
-    // The button has transitioned from on to off
-    g_last_activity_time = millis();
-    g_button_pressed = false;
-  }
+  g_last_button_state = button_state;
 }

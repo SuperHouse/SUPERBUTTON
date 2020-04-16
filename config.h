@@ -1,16 +1,20 @@
 /* ----------------- General Config -------------------------------- */
-#define ENABLE_HAPTIC_FEEDBACK   true  // Vibrate on activation
-#define DEFAULT_TRIGGER_LEVEL      50  // Replaced by value from EEPROM
-#define ADJUSTMENT_MODE_TIMEOUT    20  // Seconds
-#define SCREEN_TIMEOUT_INTERVAL    30  // Seconds
-#define SCREEN_UPDATE_INTERVAL    200  // 200ms = 5 updates per second
-#define ENABLE_SERIAL_DEBUGGING false  // true / false
+#define ENABLE_HAPTIC_FEEDBACK    true     // Vibrate on activation
+#define DEFAULT_TRIGGER_LEVEL       50     // Replaced by value from EEPROM
+#define ADJUSTMENT_MODE_TIMEOUT     20     // Seconds
+#define SCREEN_TIMEOUT_INTERVAL     30     // Seconds
+#define SCREEN_UPDATE_INTERVAL     200     // 200ms = 5 updates per second
+
+/* Serial */
+#define ENABLE_SERIAL_DEBUGGING  false     // true / false
+#define SERIAL_BAUD_RATE        115200     // Speed for USB serial console
 
 /* ----------------- Hardware-specific Config ---------------------- */
 /* Rotary encoder */
 #define ENCODER_PIN_A       1
 #define ENCODER_PIN_B       0
 #define ENCODER_SWITCH     A0
+#define DEBOUNCE_PERIOD   1000          // ms
 
 /* Load cell */
 #define LOADCELL_SCK_PIN    4
