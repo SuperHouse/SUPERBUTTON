@@ -1,23 +1,29 @@
-/*************************************************************
+/**
    "SuperButton" Assistive Technology Button
 
    Provides a simple dry-contact output assistive-technology
    button using a load cell, so that the force required to activate
    the button can be adjusted to suit the needs of the user.
 
+   External dependencies. Install using Arduino library manager:
+     "Adafruit GFX Library" by Adafruit
+     "Adafruit SSD1306" by Adafruit
+     "Encoder" library by Paul Stoffregen
+     "HX711 Arduino Library" by Bogdan Necula, Andreas Motti
+
    More information:
      www.superhouse.tv/sb
 
    To do:
     - Require button press for 1 second to enter adjustment mode.
-    - Debounce button.
+    - Missing button detection.
 
-   By:
-    Chris Fryer <chris.fryer78@gmail.com>
-    Jonathan Oxer <jon@oxer.com.au>
+   Written by Chris Fryer and Jonathan Oxer for www.superhouse.tv
+    https://github.com/superhouse/
 
    Copyright 2019-2020 SuperHouse Automation Pty Ltd www.superhouse.tv
- *************************************************************/
+*/
+#define VERSION "1.1"
 /*--------------------------- Configuration ------------------------------*/
 // Configuration should be done in the included file:
 #include "config.h"
@@ -28,8 +34,9 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
-#include <Encoder.h>              // "Encoder" library by PJRC
+#include <Encoder.h>
 #include <EEPROM.h>
+
 /*--------------------------- Global Variables ---------------------------*/
 // OLED:
 uint32_t g_last_screen_update   = 0;
@@ -38,18 +45,23 @@ uint32_t g_last_screen_update   = 0;
 int32_t  g_old_encoder_position = -999;
 uint32_t g_last_activity_time   = 0;
 uint8_t  g_last_button_state    = 0;
+uint8_t  g_current_button_state = 0;
 uint32_t g_last_debounce_time   = 0;
+uint16_t g_debounce_interval    = 500;
 
 // Non-volatile memory:
-int g_eeprom_address = 0;
+uint32_t g_eeprom_address       = 0;
 
 /* 227 (Pocophone) = 920000 */
 // Load cell:
-int32_t g_trigger_level          = DEFAULT_TRIGGER_LEVEL;
-int32_t g_pressure_level         =  0;
-uint8_t g_adjust_mode            = false;
-uint8_t g_button_pressed         = false;
-int32_t g_zero_pressure_offset   = 0;
+int32_t g_trigger_level         = DEFAULT_TRIGGER_LEVEL;
+int32_t g_pressure_level        = 0;
+uint8_t g_adjust_mode           = false;
+uint8_t g_button_pressed        = false;
+int32_t g_zero_pressure_offset  = 0;
+
+// General:
+uint32_t g_pulse_start_time     = 0;
 
 /*--------------------------- Function Signatures ---------------------------*/
 void checkIfThresholdReached();
@@ -76,11 +88,12 @@ Adafruit_SSD1306 display(128, 32, &Wire, -1);
   Setup
 */
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(SERIAL_BAUD_RATE);
   //while (!Serial) {
   //  ; // wait for serial port to connect. Needed for native USB port only
   //}
-  Serial.println("Starting");
+  Serial.print("SuperButton starting up, v");
+  Serial.println(VERSION);
 
   pinMode(ENCODER_SWITCH, INPUT_PULLUP);
   pinMode(ENCODER_PIN_A,  INPUT_PULLUP);
@@ -99,19 +112,22 @@ void setup() {
 
   // Initialize with the I2C addr 0x3C (for the 128x32)
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-
   display.clearDisplay();
   display.setTextSize(2);
   display.setTextColor(WHITE);
   display.setCursor(0, 0);
-  display.println(" Checking");
-  display.println("  button");
+  display.println("Starting");
+  display.print(" button");
   display.display();
-
-  delay(500);
+  for (uint8_t i = 0; i < 3; i++)
+  {
+    delay(300);
+    display.print(".");
+    display.display();
+  }
 
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-  delay(100); // Load cell requires ~15ms to settle. Allow longer for safety.
+  delay(400); // Load cell requires ~15ms to settle. Allow much longer for safety.
 
   // Read the load cell to set the zero offset. This is like
   // an automatic "tare" operation at startup
@@ -119,15 +135,15 @@ void setup() {
   Serial.print("Tare offset: ");
   Serial.println(g_zero_pressure_offset, DEC);
 
-  // This vvvvvvvvvvvvvv doesn't seem to work. Always gets to this point!
-  //
-  // We only reach the next line if scale.begin() succeeded above. If it
-  // didn't, the controller stalls with "Button not connected" on the display.
-  // If it succeeded, that message is very quickly wiped below.
+  // We need a way to detect if the button isn't plugged in. Because the HX711
+  // is internal, it always gives a reading. With no button it reads -1, but
+  // that could be a legitimate tare offset so we cant just check for that.
+
   display.clearDisplay();
-  display.setCursor(0, 0);
-  display.println("Ready");
+  display.setCursor(0, 10);
+  display.println("  Ready");
   display.display();
+  delay(1000);
 }
 
 /**
@@ -153,6 +169,7 @@ void checkIfThresholdReached()
     if (ENABLE_SERIAL_DEBUGGING)
     {
       Serial.println("              ON");
+      g_pulse_start_time = millis();
     }
     digitalWrite(LED_PIN, HIGH);
     if (ENABLE_HAPTIC_FEEDBACK)
@@ -166,12 +183,16 @@ void checkIfThresholdReached()
     {
       Serial.println();
     }
-    digitalWrite(LED_PIN, LOW);
-    if (ENABLE_HAPTIC_FEEDBACK)
+    if ((PULSE_STRETCHING == true && (millis() - g_last_activity_time > PULSE_STRETCH_PERIOD))
+        || PULSE_STRETCHING == false)
     {
-      digitalWrite(HAPTIC_PIN, LOW);
+      digitalWrite(LED_PIN, LOW);
+      if (ENABLE_HAPTIC_FEEDBACK)
+      {
+        digitalWrite(HAPTIC_PIN, LOW);
+      }
+      digitalWrite(OUTPUT_PIN, LOW);
     }
-    digitalWrite(OUTPUT_PIN, LOW);
   }
 }
 
@@ -326,19 +347,21 @@ int32_t getScaledLoadCellValue()
 */
 void checkButton()
 {
-  uint8_t button_state = digitalRead(ENCODER_SWITCH);
+  g_last_button_state = g_current_button_state;
+  g_current_button_state = digitalRead(ENCODER_SWITCH);
 
-  // Check if button is now pressed and it was previously unpressed
-  if (button_state == LOW && g_last_button_state == HIGH)
+  // Transition from unpressed to pressed
+  if (LOW == g_current_button_state && HIGH == g_last_button_state)
   {
-    g_last_activity_time   = millis();  // Used to un-blank display
-    //Serial.println("Changed");
+    g_last_activity_time = millis();  // Used to un-blank display
 
-    // We haven't waited long enough so ignore this press
-    if (millis() - g_last_debounce_time <= DEBOUNCE_PERIOD) {
+    // If we haven't waited long enough then ignore this press
+    if (millis() - g_last_debounce_time <= g_debounce_interval) {
       return;
     }
+
     Serial.print("Button pressed.");
+    g_last_debounce_time = millis();
 
     if (true == g_adjust_mode)
     {
@@ -352,7 +375,5 @@ void checkButton()
       g_adjust_mode = true;
       Serial.println(" Unlocking screen.");
     }
-    g_last_debounce_time = millis();
   }
-  g_last_button_state = button_state;
 }
