@@ -13,12 +13,14 @@ applies the new setting and saves it in EEPROM. When it hasn't
 been clicked into adjustment mode, the rotary encoder is ignored
 so that it can't be accidentally bumped to a different setting.
 
-More information: https://www.superhouse.tv/sb
+The load cell reading is zeroed at startup, and can also be
+re-zeroed by pressing the "tare" button.
 
-To do:
- * Time out adjustment mode if no change within X seconds.
- * Require button press for 1 second to enter adjustment mode.
- * Debounce button.
+The output duration can directly match the button press, or it
+can be "stretched" to allow even a quick tap to cause a longer
+beep output. The beep stretching switch activates this option.
+
+More information: https://www.superhouse.tv/sb
 
 Contributers:
  * Chris Fryer <chris.fryer78@gmail.com>

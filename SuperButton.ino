@@ -5,6 +5,13 @@
    button using a load cell, so that the force required to activate
    the button can be adjusted to suit the needs of the user.
 
+   The load cell reading is zeroed at startup, and can also be
+   re-zeroed by pressing the "tare" button.
+
+   The output duration can directly match the button press, or it
+   can be "stretched" to allow even a quick tap to cause a longer
+   beep output. The beep stretching switch activates this option.
+
    External dependencies. Install using Arduino library manager:
      "Adafruit GFX Library" by Adafruit
      "Adafruit SSD1306" by Adafruit
@@ -23,7 +30,7 @@
 
    Copyright 2019-2020 SuperHouse Automation Pty Ltd www.superhouse.tv
 */
-#define VERSION "1.1"
+#define VERSION "3.0"
 /*--------------------------- Configuration ------------------------------*/
 // Configuration should be done in the included file:
 #include "config.h"
@@ -61,7 +68,8 @@ uint8_t g_button_pressed        = false;
 int32_t g_zero_pressure_offset  = 0;
 
 // General:
-uint32_t g_pulse_start_time     = 0;
+uint32_t g_beep_start_time      = 0;
+uint8_t  g_beep_stretch         = false;
 
 /*--------------------------- Function Signatures ---------------------------*/
 void checkIfThresholdReached();
@@ -72,6 +80,9 @@ void readRotaryEncoder();
 void updateOledDisplay();
 void readLoadCell();
 void checkButton();
+void checkTareButton();
+void checkBeepStretchSwitch();
+void tareCellReading();
 
 /*--------------------------- Instantiate Global Objects --------------------*/
 // Load cell
@@ -95,12 +106,14 @@ void setup() {
   Serial.print("SuperButton starting up, v");
   Serial.println(VERSION);
 
-  pinMode(ENCODER_SWITCH, INPUT_PULLUP);
-  pinMode(ENCODER_PIN_A,  INPUT_PULLUP);
-  pinMode(ENCODER_PIN_B,  INPUT_PULLUP);
+  pinMode(ENCODER_SWITCH,   INPUT_PULLUP);
+  pinMode(ENCODER_PIN_A,    INPUT_PULLUP);
+  pinMode(ENCODER_PIN_B,    INPUT_PULLUP);
+
+  pinMode(TARE_BUTTON_PIN,  INPUT_PULLUP);
+  pinMode(BEEP_STRETCH_PIN, INPUT_PULLUP);
 
   pinMode(LED_PIN,    OUTPUT);
-  pinMode(HAPTIC_PIN, OUTPUT);
   pinMode(OUTPUT_PIN, OUTPUT);
 
   // Load the trigger level from EEPROM if possible, or fall back to default
@@ -129,11 +142,8 @@ void setup() {
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
   delay(400); // Load cell requires ~15ms to settle. Allow much longer for safety.
 
-  // Read the load cell to set the zero offset. This is like
-  // an automatic "tare" operation at startup
-  g_zero_pressure_offset = -1 * getScaledLoadCellValue();
-  Serial.print("Tare offset: ");
-  Serial.println(g_zero_pressure_offset, DEC);
+  // Do an automatic "tare" operation at startup
+  tareCellReading();
 
   // We need a way to detect if the button isn't plugged in. Because the HX711
   // is internal, it always gives a reading. With no button it reads -1, but
@@ -157,6 +167,7 @@ void loop()
   readRotaryEncoder();
   updateOledDisplay();
   checkButton();
+  checkBeepStretchSwitch();
 }
 
 /**
@@ -169,13 +180,9 @@ void checkIfThresholdReached()
     if (ENABLE_SERIAL_DEBUGGING)
     {
       Serial.println("              ON");
-      g_pulse_start_time = millis();
+      g_beep_start_time = millis();
     }
     digitalWrite(LED_PIN, HIGH);
-    if (ENABLE_HAPTIC_FEEDBACK)
-    {
-      digitalWrite(HAPTIC_PIN, HIGH);
-    }
     digitalWrite(OUTPUT_PIN, HIGH);
     g_last_activity_time = millis();
   } else {
@@ -183,14 +190,10 @@ void checkIfThresholdReached()
     {
       Serial.println();
     }
-    if ((PULSE_STRETCHING == true && (millis() - g_last_activity_time > PULSE_STRETCH_PERIOD))
-        || PULSE_STRETCHING == false)
+    if ((g_beep_stretch == true && (millis() - g_last_activity_time > g_beep_stretch))
+        || g_beep_stretch == false)
     {
       digitalWrite(LED_PIN, LOW);
-      if (ENABLE_HAPTIC_FEEDBACK)
-      {
-        digitalWrite(HAPTIC_PIN, LOW);
-      }
       digitalWrite(OUTPUT_PIN, LOW);
     }
   }
@@ -376,4 +379,48 @@ void checkButton()
       Serial.println(" Unlocking screen.");
     }
   }
+}
+
+/**
+  Check the position of the beep stretch switch
+*/
+void checkBeepStretchSwitch()
+{
+  uint8_t switch_position;
+  switch_position = digitalRead(BEEP_STRETCH_PIN);
+
+  if (LOW == switch_position)
+  {
+    g_beep_stretch = true;
+  } else {
+    g_beep_stretch = false;
+  }
+}
+
+/**
+  Check if the tare button is pressed
+*/
+void checkTareButton()
+{
+  uint8_t switch_position;
+  switch_position = digitalRead(TARE_BUTTON_PIN);
+
+  if (LOW == switch_position)
+  {
+    // Button is pressed, do the tare!
+    tareCellReading();
+  }
+}
+
+/**
+  Reset the zero position of the load cell
+*/
+void tareCellReading()
+{
+  // Read the load cell to set the zero offset
+  g_zero_pressure_offset = -1 * getScaledLoadCellValue();
+#if ENABLE_SERIAL_DEBUGGING
+  Serial.print("Tare offset: ");
+  Serial.println(g_zero_pressure_offset, DEC);
+#endif
 }
