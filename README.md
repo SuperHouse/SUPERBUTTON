@@ -41,6 +41,14 @@ The "Hardware" directory contains the PCB design as an EAGLE project.
 EAGLE PCB design software is available from Autodesk free for
 non-commercial use.
 
+The PCB called "SUPERBUTTON" is the main controller which is mounted
+in an enclosure.
+
+The PCB called "SBCONN" is for the hand-held portion of the button, to
+make assembly easier and improve connection reliability. It includes a
+4.2mm hole for placement of an M3 clinch-nut, which can
+be used to pass a travel-limit bolt through the PCB.
+
 
 Firmware
 --------
