@@ -79,7 +79,7 @@ void checkUiTimeout();
 void readRotaryEncoder();
 void updateOledDisplay();
 void readLoadCell();
-void checkButton();
+void checkModeButton();
 void checkTareButton();
 void checkBeepStretchSwitch();
 void tareCellReading();
@@ -166,8 +166,9 @@ void loop()
   checkUiTimeout();
   readRotaryEncoder();
   updateOledDisplay();
-  checkButton();
+  checkModeButton();
   checkBeepStretchSwitch();
+  checkTareButton();
 }
 
 /**
@@ -179,19 +180,19 @@ void checkIfThresholdReached()
   {
     if (ENABLE_SERIAL_DEBUGGING)
     {
-      Serial.println("              ON");
-      g_beep_start_time = millis();
+      //Serial.println("              ON");
     }
     digitalWrite(LED_PIN, HIGH);
     digitalWrite(OUTPUT_PIN, HIGH);
     g_last_activity_time = millis();
+    g_beep_start_time = millis();
   } else {
     if (ENABLE_SERIAL_DEBUGGING)
     {
-      Serial.println();
+      //Serial.println();
     }
-    if ((g_beep_stretch == true && (millis() - g_last_activity_time > g_beep_stretch))
-        || g_beep_stretch == false)
+    if (((true == g_beep_stretch) && (millis() > g_beep_start_time + BEEP_STRETCH_PERIOD))
+        || false == g_beep_stretch)
     {
       digitalWrite(LED_PIN, LOW);
       digitalWrite(OUTPUT_PIN, LOW);
@@ -303,7 +304,7 @@ void updateOledDisplay()
       display.display();
       if (ENABLE_SERIAL_DEBUGGING)
       {
-        Serial.println("Show");
+        //Serial.println("Show");
       }
     } else {
       // The screen has timed out, so blank it
@@ -311,7 +312,7 @@ void updateOledDisplay()
       display.display();
       if (ENABLE_SERIAL_DEBUGGING)
       {
-        Serial.println("Blank");
+        //Serial.println("Blank");
       }
     }
   }
@@ -325,7 +326,7 @@ void readPressureLevel()
   g_pressure_level = getScaledLoadCellValue() + g_zero_pressure_offset;
   if (ENABLE_SERIAL_DEBUGGING)
   {
-    Serial.println(g_pressure_level);
+    //Serial.println(g_pressure_level);
   }
 }
 
@@ -348,7 +349,7 @@ int32_t getScaledLoadCellValue()
 /**
   See if the rotary encoder button has been pressed
 */
-void checkButton()
+void checkModeButton()
 {
   g_last_button_state = g_current_button_state;
   g_current_button_state = digitalRead(ENCODER_SWITCH);
@@ -408,7 +409,9 @@ void checkTareButton()
   if (LOW == switch_position)
   {
     // Button is pressed, do the tare!
+    delay(200);
     tareCellReading();
+    delay(100);
   }
 }
 

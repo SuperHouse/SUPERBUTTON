@@ -4,10 +4,10 @@
 #define SCREEN_TIMEOUT_INTERVAL     30   // Seconds
 #define SCREEN_UPDATE_INTERVAL     200   // 200ms = 5 updates per second
 
-#define BEEP_STRETCH_PERIOD       1000   // ms
+#define BEEP_STRETCH_PERIOD       2000   // ms
 
 /* Serial */
-#define ENABLE_SERIAL_DEBUGGING  false   // true / false
+#define ENABLE_SERIAL_DEBUGGING  true   // true / false
 #define SERIAL_BAUD_RATE          9600   // Speed for USB serial console
 
 /* ----------------- Hardware-specific Config ---------------------- */
